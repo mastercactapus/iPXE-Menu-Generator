@@ -1,3 +1,4 @@
+require 'yaml'
 puts "\#!ipxe"
 
 
@@ -68,6 +69,12 @@ class Menu
   end
 end
 
+def gen_from_glob(glob_str, menu)
+  Dir[glob_str].each do |file|
+    cfg = YAML.load_file(file)
+    main.item cfg[:label], cfg[:lines].join("\n")
+  end
+end
 
 memiso = Menu.new("Boot ISO using memdisk")
 saniso = Menu.new("Boot ISO using SAN")
@@ -88,11 +95,11 @@ saniso.break
 memiso.item "Back to Main Menu", main.display_str
 saniso.item "Back to Main Menu", main.display_str
 
-main.break "Boot from an ISO"
+main.break "ISO Boot"
 main.item "SAN Boot Options", saniso.display_str
 main.item "Memdisk Boot Options", memiso.display_str
-main.break "Recovery Utilities"
-main.item "Parted Magic", 
+main.break "Custom Boot Options"
+gen_from_glob("custom/**/menu.yml", main)
 main.break "Other Options"
 main.item "Reboot", "reboot"
 main.item "iPXE Shell", "shell"
