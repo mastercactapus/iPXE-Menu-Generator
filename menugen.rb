@@ -72,7 +72,8 @@ end
 def gen_from_glob(glob_str, menu)
   Dir[glob_str].each do |file|
     cfg = YAML.load_file(file)
-    main.item cfg[:label], cfg[:lines].join("\n")
+    lines = cfg[:lines].join("\n").gsub("_DIR_",File.dirname(file))
+    menu.item cfg[:label], lines
   end
 end
 
