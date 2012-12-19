@@ -1,115 +1,131 @@
 require 'yaml'
+require 'yaml'
 puts "\#!ipxe"
 
 
-URL = "http://nathan-server.lan/netboot"
+CFG = "/srv/netboot/menu.yml"
 
 $id = 0
 def new_id
-  "a" + ($id += 1).to_s + "b"
+  "i" + ($id += 1).to_s + "d"
 end
 
-class Menu
-  attr_reader :id
-  def initialize(title)
-    @id    = new_id
-    @title = title
-    @items = []
-    @finished = false
+class Menu < Hash
+  attr_reader :parent, :dirs, :id, :menuid
+  def initialize(yml, parent=nil)
+    @id = new_id
+    @menuid = @id
+    @parent = parent
+    @dirs =  @parent ? @parent.dirs : {}
+    @dirs.merge! yml["set"] || {}
+    @contents = yml["contents"]
+    unless @parent.nil?
+      @contents << {"gap" => "Navigate"}
+      @contents << {"item" => make_link("Go Back",@parent)} unless @parent == get_root
+      @contents << {"item" => make_link("Main Menu",get_root)}
+    end
+    merge! yml
   end
-  def break(message="")
-    @items << {
-      id: "--gap",
-      label: message
-    }
+  
+  def definition
+    lines = []
+    lines << "goto end_#{id}"
+    lines << ":start_#{id}"
+    lines << "menu --name #{id} #{self["label"]}"
+    lines += @contents.map { |item| define_content(item.first.first, item.first.last) }
+    lines << "choose --menu #{id} lsel && goto ${lsel}"
+    lines << ":end_#{id}"
+
+    lines.join("\n")
   end
-  def item(message, action)
-    @items << {
-      id: new_id,
-      action: action,
-      label:message
-    }
-  end
-  def finish
-    @finished=true
-    puts "goto d#{id}"
-    puts ":e#{id}"
-    puts "menu --name #{id} #{@title}"
-    @items.each { |item| puts item_str(item) }
-    puts "choose --menu #{id} lsel && goto ${lsel}"
-    puts ":d#{id}"
-  end
-  def display
-    finish unless @finished
-    puts display_str
-  end
-  def display_str
-    "goto e#{id}"
+  def trigger
+    "goto start_#{id}"
   end
   private
-  def item_str(item)
-    out = ["item --menu #{id} #{item[:id]} #{item[:label] || ''}"]
-    unless item[:action].nil?
-      out << "goto c#{item[:id]}"
-      out << ":#{item[:id]}"
-      out << action_str(item[:action])
-      out << "goto err"
-      out << ":c#{item[:id]}"
+  def make_link(label, menu)
+    {
+      "label" => label,
+      "actions" => menu.trigger 
+    }
+  end
+  def get_root
+    p = self
+    p = p.parent until p.parent == nil
+    p
+  end
+  def define_content(type,data)
+    case type
+    when "gap"
+      Gap.new(data, self).to_s
+    when "item"
+      Item.new(data, self).to_s
+    when "menu"
+      menu = Menu.new(data, self)
+      item = Item.new(make_link(data["label"],menu),self)
+      [menu.definition, item.to_s].join("\n")
+    else
+      puts type
+      puts data
+      throw :fit => "Malformed menu.yml!! contents must only contain gap, item, or menu"
     end
-    out.join("\n")
   end
-  def action_str(act)
-    if act.is_a? Array
-      act.map {|itm| action_str itm}.join("\n")
-    elsif act.is_a? String
-      act
-    elsif act.is_a? Menu
-      act.display_str
+end
+
+class Item < Hash
+  attr_reader :parent, :dirs, :menuid, :id
+  def initialize(yml, parent)
+    @parent = parent
+    @id = new_id
+    @menuid = @parent.menuid
+    @dirs = @parent.dirs
+    if yml["append_dir"]
+      @dirs = {}
+      @parent.dirs.each do |dir,path|
+        @dirs[dir] = File.join(path,yml["append_dir"])
+      end
+    else
+      @dirs = @parent.dirs
     end
+    merge! yml
+  end
+  def to_s
+    lines = []
+    lines << "item --menu #{menuid} start_#{id} #{self["label"]}"
+    lines << "goto end_#{id}"
+    lines << ":start_#{id}"
+    
+    act = (self["actions"].is_a?(Array) ? self["actions"] : [self["actions"]]).join("\n")
+    @dirs.each do |dir,path|
+      act.gsub! "_#{dir.upcase}_", path
+    end
+    lines << act
+    
+    lines << "goto err"
+    lines << ":end_#{id}"
+
+    lines.join("\n")    
   end
 end
 
-def gen_from_glob(glob_str, menu)
-  Dir[glob_str].each do |file|
-    cfg = YAML.load_file(file)
-    lines = cfg["lines"].join("\n").gsub("_DIR_",File.dirname(file))
-    menu.item cfg["label"], lines
+class Gap < String
+  attr_reader :parent, :menuid, :label
+  def initialize(gap_str, parent)
+    @parent = parent
+    @menuid = @parent.menuid
+    @label = gap_str
+  end
+  def to_s
+    "item --menu #{menuid} --gap #{label}"
   end
 end
 
-memiso = Menu.new("Boot ISO using memdisk")
-saniso = Menu.new("Boot ISO using SAN")
-main = Menu.new("Nathan's Network Boot System")
+cfg = YAML.load_file(CFG)
 
-Dir["../iso/*.iso"].each do |file|
-  file.sub! /^\.\./, URL
-  memiso.item File.basename(file), 
-    [ "kernel #{File.join(URL,"memdisk")}",
-      "initrd #{file} harddisk=1",
-      "boot"]
-  saniso.item File.basename(file),
-  "sanboot --keep --drive=0x80 #{file}"
-end
+main = Menu.new(cfg["root_menu"])
 
-memiso.break
-saniso.break
-memiso.item "Back to Main Menu", main.display_str
-saniso.item "Back to Main Menu", main.display_str
+puts main.definition
 
-main.break "ISO Boot"
-main.item "SAN Boot Options", saniso.display_str
-main.item "Memdisk Boot Options", memiso.display_str
-main.break "Custom Boot Options"
-gen_from_glob("custom/**/menu.yml", main)
-main.break "Other Options"
-main.item "Reboot", "reboot"
-main.item "iPXE Shell", "shell"
-
-memiso.finish
-saniso.finish
-main.finish
-
-main.display
+puts main.trigger
 
 puts ":err"
 puts "echo Should not have gotten here, dropping to shell!"
