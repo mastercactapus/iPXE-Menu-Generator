@@ -1,0 +1,45 @@
+root_menu:
+  set:
+    nfs:  10.42.0.243:/srv/netboot/nfs
+    http: http://10.42.0.243/netboot/nfs
+  label: Network Boot System
+  contents:
+  - gap: System Utilities
+  - item:
+      label: Parted Magic
+      append_dir: pmagic_iso
+      actions:
+      - kernel _HTTP_/bzImage edd=off load_ramdisk=1 prompt_ramdisk=0 rw vga=normal loglevel=0 max_loop=256
+      - initrd _HTTP_/initrd.img
+      - boot
+  - gap: Installation Media
+  - menu:
+      label: Linux Mint
+      contents:
+      - item:
+          label: Linux Mint Cinnamon (64 bit)
+          append_dir: linux_mint_14
+          actions:
+          - initrd _HTTP_/casper/initrd.lz
+          - kernel _HTTP_/casper/vmlinuz
+            root=/dev/nfs netboot=nfs nfsroot=_NFS_
+            boot=casper quiet splash --
+          - boot
+      - item:
+          label: Linux Mint MATE (64 bit)
+          append_dir: linux_mint_14_mate
+          actions:
+          - initrd _HTTP_/casper/initrd.lz
+          - kernel _HTTP_/casper/vmlinuz
+            root=/dev/nfs netboot=nfs nfsroot=_NFS_
+            boot=casper quiet splash --
+          - boot
+      - item:
+          label: Linux Mint Debian Edition (64 bit)
+  - gap: Other Options
+  - item:
+      label: iPXE Shell
+      actions: shell
+  - item:
+      label: Reboot System
+      actions: reboot
