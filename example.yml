@@ -1,0 +1,38 @@
+root_menu:
+  set:
+    http: http://10.42.0.1:81
+    power: http://10.42.0.1:81/scripts/poweron
+  label: Router -- Network Boot System
+  contents:
+  - gap: System Recovery Utilities
+  - item:
+      label: Parted Magic
+      append_dir: pmagic_pxe_2012_11_30
+      actions:
+      - kernel _http_/bzImage edd=off load_ramdisk=1 prompt_ramdisk=0 rw vga=normal loglevel=0 max_loop=256
+      - initrd _http_/initrd.img
+      - boot
+  - gap: Node Power States
+  - item:
+      label: Power on Server
+      actions: imgfetch _power_/server.sh
+  - item:
+      label: Power on Desktop
+      actions: imgfetch _power_/desktop.sh
+  - item:
+      label: Power on Everything (fun)
+      actions: imgfetch _power_/all.sh
+  - gap: Other Options
+  - item:
+      label: Boot From Server (Attempt)
+      actions: chain boot.ipxe
+  - item:
+      label: Drop to iPXE Shell
+      actions: shell
+  - item:
+      label: Boot From Local Disk
+      actions: sanboot --no-describe
+  - item:
+      label: Reboot Local System
+      actions: reboot
+
